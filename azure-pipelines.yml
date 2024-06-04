@@ -1,36 +1,98 @@
-# Python package
-# Create and test a Python package on multiple Python versions.
-# Add steps that analyze code, save the dist with the build record, publish to a PyPI-compatible index, and more:
-# https://docs.microsoft.com/azure/devops/pipelines/languages/python
-
 trigger:
 - main
 
 pool:
-  vmImage: ubuntu-latest
-strategy:
-  matrix:
-    Python27:
-      python.version: '2.7'
-    Python35:
-      python.version: '3.5'
-    Python36:
-      python.version: '3.6'
-    Python37:
-      python.version: '3.7'
+  vmImage: 'ubuntu-latest'
 
-steps:
-- task: UsePythonVersion@0
-  inputs:
-    versionSpec: '$(python.version)'
-  displayName: 'Use Python $(python.version)'
+variables:
+  SCANNER_HOME: $(System.DefaultWorkingDirectory)/sonar-scanner
+  SONAR_HOST_URL: 'http://127.0.0.1:43269'
+  DOCKER_IMAGE_NAME: 'imagen_app'
+  DOCKER_TAG: 'leonel1521/app_final'
 
-- script: |
-    python -m pip install --upgrade pip
-    pip install -r requirements.txt
-  displayName: 'Install dependencies'
+stages:
+- stage: Checkout
+  jobs:
+  - job: Checkout
+    steps:
+    - task: GitCheckout@1
+      inputs:
+        repository: 'https://github.com/tefkat1521/PracticaJavascript.git'
+        branch: 'main'
 
-- script: |
-    pip install pytest pytest-azurepipelines
-    pytest
-  displayName: 'pytest'
+- stage: SonarAnalysis
+  jobs:
+  - job: SonarAnalysis
+    steps:
+    - task: SonarQubePrepare@4
+      inputs:
+        SonarQube: 'sonarqube'
+        scannerMode: 'CLI'
+        configMode: 'manual'
+        cliProjectKey: 'projectV3'
+        cliSources: '.'
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '3.x'
+        addToPath: true
+    - script: |
+        python -m pip install --upgrade pip
+        python -m pip install sonar-scanner
+      displayName: 'Install Sonar Scanner'
+    - script: |
+        $(SCANNER_HOME)/bin/sonar-scanner \
+        -Dsonar.projectKey=projectV3 \
+        -Dsonar.host.url=$(SONAR_HOST_URL) \
+        -Dsonar.login=$(SONARQUBE_ENDPOINT_USERNAME) \
+        -Dsonar.password=$(SONARQUBE_ENDPOINT_PASSWORD)
+      env:
+        SONARQUBE_ENDPOINT_USERNAME: $(SONARQUBE_ENDPOINT_USERNAME)
+        SONARQUBE_ENDPOINT_PASSWORD: $(SONARQUBE_ENDPOINT_PASSWORD)
+      displayName: 'Run Sonar Scanner'
+
+- stage: CreateDockerfile
+  jobs:
+  - job: CreateDockerfile
+    steps:
+    - script: |
+        rm -f Dockerfile
+        echo 'FROM httpd:2.4' > Dockerfile
+        echo 'COPY . /usr/local/apache2/htdocs/' >> Dockerfile
+        echo 'EXPOSE 80' >> Dockerfile
+      displayName: 'Create Dockerfile'
+
+- stage: DockerBuild
+  jobs:
+  - job: DockerBuild
+    steps:
+    - task: Docker@2
+      inputs:
+        command: 'build'
+        dockerfile: '**/Dockerfile'
+        tags: $(DOCKER_IMAGE_NAME)
+
+- stage: DockerLogin
+  jobs:
+  - job: DockerLogin
+    steps:
+    - task: Docker@2
+      inputs:
+        command: 'login'
+        containerRegistry: 'DockerHub'
+        dockerRegistryEndpoint: 'DockerHub'
+        username: 'leonel1521'
+        password: '$(DOCKER_PASSWORD)'
+
+- stage: DockerPush
+  jobs:
+  - job: DockerPush
+    steps:
+    - task: Docker@2
+      inputs:
+        command: 'tag'
+        imageName: $(DOCKER_IMAGE_NAME)
+        tag: $(DOCKER_TAG)
+    - task: Docker@2
+      inputs:
+        command: 'push'
+        imageName: $(DOCKER_TAG)

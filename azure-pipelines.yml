@@ -2,7 +2,7 @@ trigger:
 - main  # O la rama que prefieras
 
 pool:
-  name: NombreDelPool  # Reemplaza con el nombre del pool de agentes
+  name: agentWLeo  # Reemplaza con el nombre del pool de agentes
 
 steps:
 - task: UsePythonVersion@0
